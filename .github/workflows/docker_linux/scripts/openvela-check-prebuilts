@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: Apache-2.0
+
+set -euo pipefail
+
+root="${1:-.}"
+missing=0
+checked=0
+
+usage() {
+  cat <<'EOF'
+Usage: openvela-check-prebuilts [workspace-root]
+
+Check OpenVela host-side prebuilts that are used by the quick CI build.
+
+This is intentionally not a recursive ldd scan over all of prebuilts/. The
+manifest contains emulator and GUI plugin libraries that are loaded through
+OpenVela wrapper scripts with their own library paths. A plain ldd scan reports
+those bundled libraries as missing even when the build path is healthy.
+EOF
+}
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+if [[ ! -d "${root}" ]]; then
+  echo "openvela-check-prebuilts: directory not found: ${root}" >&2
+  exit 2
+fi
+
+required_paths=(
+  "prebuilts/tools/linux/x86_64/cc"
+  "prebuilts/tools/linux/x86_64/cmake/bin/cmake"
+  "prebuilts/tools/linux/x86_64/ninja"
+  "prebuilts/gcc/linux-x86_64/aarch64-none-elf/bin/aarch64-none-elf-gcc"
+  "prebuilts/gcc/linux-x86_64/aarch64-none-elf/bin/aarch64-none-elf-g++"
+)
+
+tmp="$(mktemp)"
+trap 'rm -f "${tmp}"' EXIT
+
+for rel_path in "${required_paths[@]}"; do
+  file_path="${root}/${rel_path}"
+  if [[ ! -e "${file_path}" ]]; then
+    echo "${file_path}: missing" >> "${tmp}"
+    missing=1
+    continue
+  fi
+
+  if [[ ! -x "${file_path}" ]]; then
+    echo "${file_path}: not executable" >> "${tmp}"
+    missing=1
+    continue
+  fi
+
+  checked=$((checked + 1))
+  ldd "${file_path}" 2>/dev/null \
+    | awk -v path="${file_path}" '/not found/ {print path ": " $0}' >> "${tmp}" || true
+done
+
+if [[ -s "${tmp}" ]]; then
+  sort -u "${tmp}" >&2
+  missing=1
+fi
+
+echo "openvela-check-prebuilts: checked ${checked} CI-critical host executable(s)"
+exit "${missing}"
