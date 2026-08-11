@@ -18,13 +18,15 @@
 name: Docker-Linux
 
 on:
+  workflow_dispatch:
   push:
-    # Publish `trunk` as Docker `latest` image.
     branches:
-      - trunk
+      - dev
     paths:
       - '.github/workflows/docker_linux.yml'
       - '.github/workflows/docker_linux/Dockerfile'
+      - '.github/workflows/docker_linux/scripts/**'
+      - '.github/actions/free-disk-space/**'
 
 env:
   IMAGE_NAME: openvela-ci-linux
@@ -42,7 +44,7 @@ jobs:
   push:
     runs-on: ubuntu-latest
     env:
-      IMAGE_TAG: ghcr.io/open-vela/openvela-ci-linux
+      IMAGE_TAG: ghcr.io/${{ github.repository_owner }}/openvela-ci-linux
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -80,8 +82,10 @@ jobs:
         with:
           context: .github/workflows/docker_linux
           platforms: linux/amd64
-          push: ${{ github.ref == 'refs/heads/trunk' }}
-          tags: ${{ env.IMAGE_TAG }}
+          push: true
+          tags: |
+            ${{ env.IMAGE_TAG }}:${{ github.ref_name }}
+            ${{ env.IMAGE_TAG }}:sha-${{ github.sha }}
       - name: Post-build Disk Stats
         if: always()
         run: |
